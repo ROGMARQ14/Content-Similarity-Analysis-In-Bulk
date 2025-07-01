@@ -39,28 +39,58 @@ if uploaded_file is not None:
     st.success(f"✅ File loaded successfully! Found {len(df)} URLs")
     
     # Display basic info
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total URLs", len(df))
     with col2:
-        st.metric("Embedding Dimensions", len(df[embedding_column].iloc[0].split(',')))
+        st.metric("Valid URLs", len(valid_indices))
+    with col3:
+        if not pd.isna(df[embedding_column].iloc[0]) and df[embedding_column].iloc[0] != '':
+            st.metric("Embedding Dimensions", len(str(df[embedding_column].iloc[0]).split(',')))
     
     # Process embeddings
     with st.spinner('Processing embeddings and calculating similarities...'):
         # Convert string embeddings to numpy arrays
         embeddings = []
         valid_indices = []
+        skipped_rows = []
+        expected_dim = None
         
         for idx, embedding_str in enumerate(df[embedding_column]):
             try:
+                # Skip if embedding is NaN or empty
+                if pd.isna(embedding_str) or embedding_str == '':
+                    skipped_rows.append((idx, "Empty embedding"))
+                    continue
+                
                 # Convert string to numpy array
-                embedding = np.array([float(x) for x in embedding_str.split(',')])
+                embedding = np.array([float(x.strip()) for x in str(embedding_str).split(',') if x.strip()])
+                
+                # Check dimension consistency
+                if expected_dim is None:
+                    expected_dim = len(embedding)
+                elif len(embedding) != expected_dim:
+                    skipped_rows.append((idx, f"Wrong dimension: {len(embedding)} (expected {expected_dim})"))
+                    continue
+                
                 embeddings.append(embedding)
                 valid_indices.append(idx)
-            except:
-                st.warning(f"⚠️ Could not process embedding for row {idx}")
+            except Exception as e:
+                skipped_rows.append((idx, str(e)[:50]))
         
+        # Show skipped rows summary
+        if skipped_rows:
+            with st.expander(f"⚠️ Skipped {len(skipped_rows)} rows with invalid embeddings"):
+                skip_df = pd.DataFrame(skipped_rows, columns=['Row Index', 'Reason'])
+                st.dataframe(skip_df)
+        
+        if len(embeddings) == 0:
+            st.error("❌ No valid embeddings found. Please check your data file.")
+            st.stop()
+        
+        # Convert to numpy array
         embeddings = np.array(embeddings)
+        st.info(f"✅ Successfully processed {len(embeddings)} out of {len(df)} URLs")
         
         # Calculate cosine similarity matrix
         similarity_matrix = cosine_similarity(embeddings)
@@ -253,4 +283,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("Made with ❤️ for content optimization")
+st.markdown("Made by SEOptimize LLC")
