@@ -106,8 +106,7 @@ if uploaded_file is not None:
                 results.append({
                     'URL_1': df[url_column].iloc[url1_idx],
                     'URL_2': df[url_column].iloc[url2_idx],
-                    'Similarity_Score': similarity_matrix[i, j],
-                    'Similarity_Percentage': similarity_matrix[i, j] * 100
+                    'Similarity_Score': round(similarity_matrix[i, j] * 100, 1)
                 })
         
         # Create results dataframe
@@ -117,6 +116,20 @@ if uploaded_file is not None:
         results_df = results_df.sort_values('Similarity_Score', ascending=False)
         
     st.success(f"✅ Analysis complete! Calculated {len(results_df):,} similarity pairs")
+    
+    # Summary statistics (moved to top)
+    st.markdown("### 📈 Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Average Similarity", f"{results_df['Similarity_Score'].mean():.1f}%")
+    with col2:
+        st.metric("Max Similarity", f"{results_df['Similarity_Score'].max():.1f}%")
+    with col3:
+        st.metric("Min Similarity", f"{results_df['Similarity_Score'].min():.1f}%")
+    with col4:
+        high_similarity = len(results_df[results_df['Similarity_Score'] >= 80])
+        st.metric("Pairs > 80% Similar", high_similarity)
     
     # Display options
     st.markdown("### 📊 Analysis Results")
@@ -143,15 +156,14 @@ if uploaded_file is not None:
         )
     
     # Filter for preview
-    preview_df = results_df[results_df['Similarity_Percentage'] >= min_similarity].head(int(top_n))
+    preview_df = results_df[results_df['Similarity_Score'] >= min_similarity].head(int(top_n))
     
     # Display preview
     st.markdown(f"### Preview (showing {len(preview_df)} pairs with similarity ≥ {min_similarity}%)")
     
     # Format the preview dataframe
     preview_display = preview_df.copy()
-    preview_display['Similarity_Percentage'] = preview_display['Similarity_Percentage'].round(2).astype(str) + '%'
-    preview_display = preview_display[['URL_1', 'URL_2', 'Similarity_Percentage']]
+    preview_display['Similarity_Score'] = preview_display['Similarity_Score'].astype(str) + '%'
     
     st.dataframe(
         preview_display,
@@ -159,41 +171,28 @@ if uploaded_file is not None:
         height=400
     )
     
-    # Summary statistics
-    st.markdown("### 📈 Summary Statistics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Average Similarity", f"{results_df['Similarity_Percentage'].mean():.2f}%")
-    with col2:
-        st.metric("Max Similarity", f"{results_df['Similarity_Percentage'].max():.2f}%")
-    with col3:
-        st.metric("Min Similarity", f"{results_df['Similarity_Percentage'].min():.2f}%")
-    with col4:
-        high_similarity = len(results_df[results_df['Similarity_Percentage'] >= 80])
-        st.metric("Pairs > 80% Similar", high_similarity)
-    
     # Potential issues
     st.markdown("### 🚨 Potential Issues Detected")
     
     # Cannibalization candidates (>85% similar)
-    cannibalization = results_df[results_df['Similarity_Percentage'] >= 85]
+    cannibalization = results_df[results_df['Similarity_Score'] >= 85]
     if len(cannibalization) > 0:
         st.warning(f"**Potential Cannibalization:** Found {len(cannibalization)} pairs with >85% similarity")
         with st.expander("View potential cannibalization pairs"):
             cann_display = cannibalization.head(20).copy()
-            cann_display['Similarity_Percentage'] = cann_display['Similarity_Percentage'].round(2).astype(str) + '%'
-            st.dataframe(cann_display[['URL_1', 'URL_2', 'Similarity_Percentage']])
+            cann_display['Similarity_Score'] = cann_display['Similarity_Score'].astype(str) + '%'
+            st.dataframe(cann_display[['URL_1', 'URL_2', 'Similarity_Score']])
     else:
         st.success("No severe cannibalization issues detected (no pairs >85% similar)")
     
     # Outliers (calculate average similarity per URL)
     url_avg_similarity = {}
     for url in df[url_column]:
-        url_similarities = results_df[
-            (results_df['URL_1'] == url) | (results_df['URL_2'] == url)
-        ]['Similarity_Score'].values
-        if len(url_similarities) > 0:
+        # Get all pairs containing this URL
+        url_pairs = results_df[(results_df['URL_1'] == url) | (results_df['URL_2'] == url)]
+        if len(url_pairs) > 0:
+            # Convert back to 0-1 scale for calculations
+            url_similarities = url_pairs['Similarity_Score'].values / 100
             url_avg_similarity[url] = np.mean(url_similarities)
     
     # Find outliers (URLs with low average similarity)
@@ -229,8 +228,7 @@ if uploaded_file is not None:
     
     # Prepare full results for download
     download_df = results_df.copy()
-    download_df['Similarity_Percentage'] = download_df['Similarity_Percentage'].round(4)
-    download_df = download_df[['URL_1', 'URL_2', 'Similarity_Score', 'Similarity_Percentage']]
+    download_df = download_df[['URL_1', 'URL_2', 'Similarity_Score']]
     
     # Convert to CSV
     csv_buffer = io.StringIO()
@@ -282,4 +280,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("Made with ❤️ for content optimization")
+st.markdown("Made by Roger Marquez")
