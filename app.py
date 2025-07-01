@@ -150,7 +150,7 @@ if uploaded_file is not None:
         top_n = st.number_input(
             "Show top N results",
             min_value=10,
-            max_value=len(results_df),
+            max_value=min(1000, len(results_df)),  # Cap at 1000 for performance
             value=min(50, len(results_df)),
             step=10
         )
@@ -171,7 +171,32 @@ if uploaded_file is not None:
         height=400
     )
     
-    # Potential issues
+    # Download section - moved higher and simplified
+    st.markdown("### 💾 Download Results")
+    
+    # Prepare full results for download
+    download_df = results_df.copy()
+    download_df = download_df[['URL_1', 'URL_2', 'Similarity_Score']]
+    
+    # Convert to CSV
+    csv_buffer = io.StringIO()
+    download_df.to_csv(csv_buffer, index=False)
+    csv_data = csv_buffer.getvalue()
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"similarity_analysis_{timestamp}.csv"
+    
+    # Download button
+    st.download_button(
+        label="📥 Download Complete Similarity Analysis (CSV)",
+        data=csv_data,
+        file_name=filename,
+        mime="text/csv",
+        help="Download all URL pairs with their similarity scores"
+    )
+    
+    # Potential issues section
     st.markdown("### 🚨 Potential Issues Detected")
     
     # Cannibalization candidates (>85% similar)
@@ -213,40 +238,15 @@ if uploaded_file is not None:
             st.warning(f"**Potential Outliers:** Found {len(outliers)} URLs that may not align with editorial line")
             with st.expander("View potential outlier URLs"):
                 outliers_display = outliers.copy()
-                outliers_display['Average_Similarity'] = (outliers_display['Average_Similarity'] * 100).round(2).astype(str) + '%'
-                st.dataframe(outliers_display)
+                outliers_display['Average_Similarity'] = (outliers_display['Average_Similarity'] * 100).round(1).astype(str) + '%'
+                st.dataframe(outliers_display.head(10))  # Limit to 10 rows
         else:
             # Show bottom 5 anyway
             st.info("**Least Similar Content:** URLs with lowest average similarity to others")
             with st.expander("View least similar URLs"):
                 bottom_5 = avg_sim_df.head(5).copy()
-                bottom_5['Average_Similarity'] = (bottom_5['Average_Similarity'] * 100).round(2).astype(str) + '%'
+                bottom_5['Average_Similarity'] = (bottom_5['Average_Similarity'] * 100).round(1).astype(str) + '%'
                 st.dataframe(bottom_5)
-    
-    # Download section
-    st.markdown("### 💾 Download Results")
-    
-    # Prepare full results for download
-    download_df = results_df.copy()
-    download_df = download_df[['URL_1', 'URL_2', 'Similarity_Score']]
-    
-    # Convert to CSV
-    csv_buffer = io.StringIO()
-    download_df.to_csv(csv_buffer, index=False)
-    csv_data = csv_buffer.getvalue()
-    
-    # Generate filename with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"similarity_analysis_{timestamp}.csv"
-    
-    # Download button
-    st.download_button(
-        label="📥 Download Complete Similarity Analysis (CSV)",
-        data=csv_data,
-        file_name=filename,
-        mime="text/csv",
-        help="Download all URL pairs with their similarity scores"
-    )
     
     # Additional insights
     st.markdown("### 💡 Next Steps")
@@ -280,4 +280,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("Made by Roger Marquez")
+st.markdown("Made with ❤️ for content optimization")
