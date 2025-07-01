@@ -38,16 +38,6 @@ if uploaded_file is not None:
     
     st.success(f"✅ File loaded successfully! Found {len(df)} URLs")
     
-    # Display basic info
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total URLs", len(df))
-    with col2:
-        st.metric("Valid URLs", len(valid_indices))
-    with col3:
-        if not pd.isna(df[embedding_column].iloc[0]) and df[embedding_column].iloc[0] != '':
-            st.metric("Embedding Dimensions", len(str(df[embedding_column].iloc[0]).split(',')))
-    
     # Process embeddings
     with st.spinner('Processing embeddings and calculating similarities...'):
         # Convert string embeddings to numpy arrays
@@ -91,6 +81,15 @@ if uploaded_file is not None:
         # Convert to numpy array
         embeddings = np.array(embeddings)
         st.info(f"✅ Successfully processed {len(embeddings)} out of {len(df)} URLs")
+        
+        # Display metrics after processing
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total URLs", len(df))
+        with col2:
+            st.metric("Valid URLs", len(valid_indices))
+        with col3:
+            st.metric("Embedding Dimensions", expected_dim if expected_dim else "N/A")
         
         # Calculate cosine similarity matrix
         similarity_matrix = cosine_similarity(embeddings)
@@ -283,4 +282,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("Made by SEOptimize LLC")
+st.markdown("Made with ❤️ for content optimization")
