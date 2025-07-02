@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# SAFETY FUNCTIONS - Added for robust error handling
+# SAFETY FUNCTIONS - Essential for preventing TypeErrors
 def safe_get_column_value(row, column_name, default=''):
     """
     Safely get a column value from a pandas row, handling various edge cases
@@ -227,7 +227,7 @@ if uploaded_file is not None:
                     url1_idx = valid_indices[i]
                     url2_idx = valid_indices[j]
                     
-                    # Safely get URLs
+                    # Safely get URLs using our safe function
                     url1 = safe_get_column_value(df.iloc[url1_idx], url_column, f"URL_{url1_idx}")
                     url2 = safe_get_column_value(df.iloc[url2_idx], url_column, f"URL_{url2_idx}")
                     
