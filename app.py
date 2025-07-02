@@ -12,111 +12,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# SAFETY FUNCTIONS - Essential for preventing TypeErrors
-def safe_get_column_value(row, column_name, default=''):
-    """
-    Safely get a column value from a pandas row, handling various edge cases
-    
-    Args:
-        row: pandas Series (row from DataFrame)
-        column_name: str, name of the column to extract
-        default: default value if column is missing or contains NaN
-    
-    Returns:
-        str: The column value as string, or default if not available
-    """
-    try:
-        # Check if column exists
-        if column_name is None or column_name not in row.index:
-            return default
-        
-        # Get the value
-        value = row.get(column_name, default)
-        
-        # Handle pandas/numpy NaN values
-        if pd.isna(value):
-            return default
-            
-        # Convert to string if not already, with safe handling
-        if value is not None:
-            return str(value).strip()
-        
-        return default
-        
-    except Exception:
-        # If anything goes wrong, return default
-        return default
-
-def detect_intent_from_title(title):
-    """
-    Safely detect intent from title, handling None and non-string values
-    
-    Args:
-        title: The title to analyze (can be None, string, or other types)
-    
-    Returns:
-        str: Intent category ('question', 'informational', 'commercial', 'comparison', 'general', 'unknown')
-    """
-    # Handle None, empty, or non-string values
-    if title is None or title == '' or not isinstance(title, str):
-        return 'unknown'
-    
-    # Convert to string and clean up
-    title = str(title).strip().lower()
-    
-    # If after cleaning it's empty, return unknown
-    if not title:
-        return 'unknown'
-    
-    # Intent detection logic (safely checking patterns)
-    try:
-        if '?' in title:
-            return 'question'
-        elif any(word in title for word in ['how', 'what', 'why', 'when', 'where', 'which']):
-            return 'informational'
-        elif any(word in title for word in ['buy', 'price', 'cost', 'purchase', 'deal', 'shop']):
-            return 'commercial'
-        elif any(word in title for word in ['best', 'top', 'review', 'compare', 'vs', 'versus']):
-            return 'comparison'
-        else:
-            return 'general'
-    except Exception:
-        # Fallback for any unexpected errors
-        return 'unknown'
-
-def safe_process_embedding(embedding_str):
-    """
-    Safely process embedding string to numpy array
-    
-    Args:
-        embedding_str: String representation of embedding
-    
-    Returns:
-        tuple: (success: bool, embedding: np.array or None, error_msg: str)
-    """
-    try:
-        # Skip if embedding is NaN or empty
-        if pd.isna(embedding_str) or embedding_str == '':
-            return False, None, "Empty embedding"
-        
-        # Convert string to numpy array
-        embedding_str = str(embedding_str).strip()
-        if not embedding_str:
-            return False, None, "Empty embedding after cleaning"
-        
-        # Split and convert to float
-        values = [float(x.strip()) for x in embedding_str.split(',') if x.strip()]
-        if not values:
-            return False, None, "No valid numbers found"
-        
-        embedding = np.array(values)
-        return True, embedding, ""
-        
-    except ValueError as e:
-        return False, None, f"Invalid number format: {str(e)[:50]}"
-    except Exception as e:
-        return False, None, f"Processing error: {str(e)[:50]}"
-
 # Title and description
 st.title("🔍 Semantic Similarity Analysis for Content Cannibalization")
 st.markdown("""
@@ -138,19 +33,18 @@ if uploaded_file is not None:
         try:
             df = pd.read_excel(uploaded_file)
             
-            # Validate that file has at least 2 columns
+            # Validate file structure
             if len(df.columns) < 2:
                 st.error("❌ File must have at least 2 columns (URLs and embeddings)")
+                st.stop()
+                
+            if len(df) == 0:
+                st.error("❌ File is empty. Please upload a file with data.")
                 st.stop()
             
             # Get column names
             url_column = df.columns[0]
             embedding_column = df.columns[1]
-            
-            # Additional safety: check if we have data
-            if len(df) == 0:
-                st.error("❌ File is empty. Please upload a file with data.")
-                st.stop()
             
             st.success(f"✅ File loaded successfully! Found {len(df)} rows")
             
@@ -168,21 +62,42 @@ if uploaded_file is not None:
         expected_dim = None
         
         for idx, embedding_str in enumerate(df[embedding_column]):
-            success, embedding, error_msg = safe_process_embedding(embedding_str)
-            
-            if not success:
-                skipped_rows.append((idx, error_msg))
-                continue
-            
-            # Check dimension consistency
-            if expected_dim is None:
-                expected_dim = len(embedding)
-            elif len(embedding) != expected_dim:
-                skipped_rows.append((idx, f"Wrong dimension: {len(embedding)} (expected {expected_dim})"))
-                continue
-            
-            embeddings.append(embedding)
-            valid_indices.append(idx)
+            try:
+                # Handle NaN and empty values safely
+                if pd.isna(embedding_str) or str(embedding_str).strip() == '':
+                    skipped_rows.append((idx, "Empty embedding"))
+                    continue
+                
+                # Convert string to numpy array
+                embedding_str_clean = str(embedding_str).strip()
+                values = []
+                
+                for x in embedding_str_clean.split(','):
+                    x = x.strip()
+                    if x:  # Only process non-empty strings
+                        try:
+                            values.append(float(x))
+                        except ValueError:
+                            continue
+                
+                if not values:  # No valid numbers found
+                    skipped_rows.append((idx, "No valid numbers found"))
+                    continue
+                
+                embedding = np.array(values)
+                
+                # Check dimension consistency
+                if expected_dim is None:
+                    expected_dim = len(embedding)
+                elif len(embedding) != expected_dim:
+                    skipped_rows.append((idx, f"Wrong dimension: {len(embedding)} (expected {expected_dim})"))
+                    continue
+                
+                embeddings.append(embedding)
+                valid_indices.append(idx)
+                
+            except Exception as e:
+                skipped_rows.append((idx, str(e)[:50]))
         
         # Show skipped rows summary
         if skipped_rows:
@@ -218,28 +133,47 @@ if uploaded_file is not None:
         results = []
         n = len(valid_indices)
         
-        with st.progress(0) as progress_bar:
-            total_pairs = (n * (n - 1)) // 2
-            pair_count = 0
-            
-            for i in range(n):
-                for j in range(i + 1, n):  # Only upper triangle to avoid duplicates
-                    url1_idx = valid_indices[i]
-                    url2_idx = valid_indices[j]
+        # Use progress bar for large datasets
+        progress_bar = st.progress(0)
+        total_pairs = (n * (n - 1)) // 2
+        pair_count = 0
+        
+        for i in range(n):
+            for j in range(i + 1, n):  # Only upper triangle to avoid duplicates
+                url1_idx = valid_indices[i]
+                url2_idx = valid_indices[j]
+                
+                # Safely get URLs - handle any potential None/NaN values
+                try:
+                    url1 = df[url_column].iloc[url1_idx]
+                    url2 = df[url_column].iloc[url2_idx]
                     
-                    # Safely get URLs using our safe function
-                    url1 = safe_get_column_value(df.iloc[url1_idx], url_column, f"URL_{url1_idx}")
-                    url2 = safe_get_column_value(df.iloc[url2_idx], url_column, f"URL_{url2_idx}")
-                    
-                    results.append({
-                        'URL_1': url1,
-                        'URL_2': url2,
-                        'Similarity_Score': round(similarity_matrix[i, j] * 100, 1)
-                    })
-                    
-                    pair_count += 1
-                    if pair_count % 100 == 0:  # Update progress every 100 pairs
-                        progress_bar.progress(pair_count / total_pairs)
+                    # Convert to string and handle NaN
+                    if pd.isna(url1):
+                        url1 = f"URL_{url1_idx}"
+                    else:
+                        url1 = str(url1)
+                        
+                    if pd.isna(url2):
+                        url2 = f"URL_{url2_idx}"
+                    else:
+                        url2 = str(url2)
+                        
+                except Exception:
+                    url1 = f"URL_{url1_idx}"
+                    url2 = f"URL_{url2_idx}"
+                
+                results.append({
+                    'URL_1': url1,
+                    'URL_2': url2,
+                    'Similarity_Score': round(similarity_matrix[i, j] * 100, 1)
+                })
+                
+                pair_count += 1
+                if pair_count % 100 == 0:  # Update progress every 100 pairs
+                    progress_bar.progress(min(pair_count / total_pairs, 1.0))
+        
+        progress_bar.progress(1.0)
         
         # Create results dataframe
         results_df = pd.DataFrame(results)
@@ -267,7 +201,7 @@ if uploaded_file is not None:
         st.markdown("### 📊 Analysis Results")
         
         # Filter options
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2 = st.columns([2, 2])
         
         with col1:
             min_similarity = st.slider(
@@ -348,15 +282,23 @@ if uploaded_file is not None:
         url_avg_similarity = {}
         
         for idx in valid_indices:
-            url = safe_get_column_value(df.iloc[idx], url_column, f"URL_{idx}")
-            
-            # Get all pairs containing this URL
-            url_pairs = results_df[(results_df['URL_1'] == url) | (results_df['URL_2'] == url)]
-            
-            if len(url_pairs) > 0:
-                # Convert back to 0-1 scale for calculations
-                url_similarities = url_pairs['Similarity_Score'].values / 100
-                url_avg_similarity[url] = np.mean(url_similarities)
+            try:
+                url = df[url_column].iloc[idx]
+                if pd.isna(url):
+                    url = f"URL_{idx}"
+                else:
+                    url = str(url)
+                
+                # Get all pairs containing this URL
+                url_pairs = results_df[(results_df['URL_1'] == url) | (results_df['URL_2'] == url)]
+                
+                if len(url_pairs) > 0:
+                    # Convert back to 0-1 scale for calculations
+                    url_similarities = url_pairs['Similarity_Score'].values / 100
+                    url_avg_similarity[url] = np.mean(url_similarities)
+                    
+            except Exception:
+                continue
         
         # Find outliers (URLs with low average similarity)
         if url_avg_similarity:
